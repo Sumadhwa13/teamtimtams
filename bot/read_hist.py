@@ -3,11 +3,15 @@ import os
 import discord
 import logging
 import pandas as pd
-import requests, json
+import requests
+import json
 from stanfordcorenlp import StanfordCoreNLP
 from discord.ext import tasks
 
 logging.basicConfig(level=logging.INFO)
+
+BASE_URL = "http://09f5a8030481.ngrok.io"
+LEADERBOARD_URL = "https://google.com"
 
 client = discord.Client()
 guild = discord.Guild
@@ -16,12 +20,14 @@ print(discord.version_info)
 active = False
 firstRun = True
 
+
 @client.event
 async def on_ready():
     print('Logged in as {0.user}'.format(client))
     await client.change_presence(activity=discord.Game('_scan help'))
 
-def is_command (message):
+
+def is_command(message):
     if len(message.content) == 0:
         return False
     elif message.content.split()[0] == '_scan':
@@ -29,9 +35,11 @@ def is_command (message):
     else:
         return False
 
+
 @tasks.loop(seconds=10)
 async def get_answers(channel):
-    answers = json.loads(requests.get("http://09f5a8030481.ngrok.io/api/data?type=answers").text)
+    answers = json.loads(requests.get(
+        f"{BASE_URL}/api/data?type=answers").text)
     for answer in answers:
         # Get the message ID
         # Check the chat history to see if this message has any reactions
@@ -41,30 +49,27 @@ async def get_answers(channel):
         reactionUsers = []
         for reaction in reactions:
             reactionUsers.append(await reaction.users().flatten())
-        
+
         uniqueUsers = []
         for reactionList in reactionUsers:
             for user in reactionList:
                 if user not in uniqueUsers:
                     uniqueUsers.append(str(user.id))
-        
+
         for userId in uniqueUsers:
             if userId == str(message.author.id):
                 uniqueUsers.remove(userId)
 
         answer["reactedBy"] = uniqueUsers
-        requests.post("http://09f5a8030481.ngrok.io/api/data", json=answer)
-        
-        
-        
-            
-        
+        requests.post(f"{BASE_URL}/api/data", json=answer)
+
 
 async def get_data(channel):
-    msg = (await channel.history(limit = 1).flatten())[0]
-    if msg.author != client.user:                                               
+    msg = (await channel.history(limit=1).flatten())[0]
+    if msg.author != client.user:
         if not is_command(msg):
-            response = requests.get("http://09f5a8030481.ngrok.io/api/index?sentence=" + msg.content)
+            response = requests.get(
+                f"{BASE_URL}/api/index?sentence=" + msg.content)
             isQuestion = json.loads(response.text)['value']
             print(isQuestion)
 
@@ -85,7 +90,8 @@ async def get_data(channel):
                         userid = userid[1:]
 
                     # Gets if the tagged user asked a question
-                    q_response = json.loads(requests.get("http://09f5a8030481.ngrok.io/api/data/query?user=" + userid).text)
+                    q_response = json.loads(requests.get(
+                        f"{BASE_URL}/api/data/query?user=" + userid).text)
                     if (q_response['value']):
                         reference = q_response['messageId']
                         isAnswer = True
@@ -103,7 +109,8 @@ async def get_data(channel):
                 "sent-at": str(msg.created_at)
             }
 
-            requests.post("http://09f5a8030481.ngrok.io/api/data", json=data)
+            requests.post(f"{BASE_URL}/api/data", json=data)
+
 
 @client.event
 async def on_message(message):
@@ -135,30 +142,51 @@ async def on_message(message):
     elif message.content.startswith('_'):
 
         print("This is running")
-        cmd = message.content.split()[0].replace("_","")
+        cmd = message.content.split()[0].replace("_", "")
         if len(message.content.split()) > 1:
             parameters = message.content.split()[1:]
 
         # Bot Commands
         if cmd == 'stop':
             active = False
-            
+
+        if cmd == 'leaderboard':
+            active = False
+            response = json.loads(requests.get(
+                f"{BASE_URL}/api/leaderboard").text)
+
+            desc = f"Full leaderboard: {LEADERBOARD_URL}"
+            for i in range(3):
+                desc += f"\n{i+1}. {response[i]['firstname']} {response[i]['lastname']}: {response[i]['points']}"
+
+            msg = discord.Embed(title="Leaderboard",
+                                description=desc,
+                                colour=0x1a7794)
+
+            await message.channel.send(embed=msg)
+            active = True
 
         if cmd == 'register':
             active = False
             parameters = message.content.split(' ')[1:]
-            if len(parameters) <= 0:
+            if len(parameters) <= 1:
+                msg = discord.Embed(title="Error",
+                                    description=f"Could not register user - missing full name",
+                                    colour=0x1a7794)
+                await message.channel.send(embed=msg)
                 active = True
                 return
             first_name = parameters[0]
             last_name = parameters[1]
 
-            
+            requests.post(f"{BASE_URL}/api/users", json={"firstname": first_name,
+                                                         "lastname": last_name,
+                                                         "discordid": str(message.author.id)})
+            msg = discord.Embed(title="Registered user",
+                                description=f"Successfully registered user {first_name} {last_name}",
+                                colour=0x1a7794)
+            await message.channel.send(embed=msg)
 
-            requests.post("http://09f5a8030481.ngrok.io/api/users", json={"firstname": first_name,
-                                                                          "lastname": last_name,
-                                                                          "discordid": str(message.author.id)})
-            
             active = True
 
         if cmd == 'scan':
@@ -168,12 +196,14 @@ async def on_message(message):
             firstRun = False
             active = True
 
+            msg = discord.Embed(title="Scan Start",
+                                description=f"Beginning scan in {message.channel}",
+                                colour=0x1a7794)
+            await message.channel.send(embed=msg)
+
             # data = pd.DataFrame(columns=['content', 'time'])
 
             # Acquiring the channel via the bot command
-
-        
-            
 
             """
             # Aquiring the number of messages to be scraped via the bot command
@@ -197,23 +227,20 @@ async def on_message(message):
 
             await message.channel.send(embed=answer)
             """
-            
-            
-        
-            
+
             # Turning the pandas dataframe into a .csv file and sending it to the user
 
             # file_location = f"{str(channel.guild.id) + '_' + str(channel.id)}.csv" # Determining file name and location
             # data.to_csv(file_location) # Saving the file as a .csv via pandas
 
             # answer = discord.Embed(title="Here is your .CSV File",
-                                   # description=f"""It might have taken a while, but here is what you asked for.\n\n`Server` : **{message.guild.name}**\n`Channel` : **{channel.name}**\n`Messages Read` : **{limit}**""",
-                                   # colour=0x1a7794) 
+            # description=f"""It might have taken a while, but here is what you asked for.\n\n`Server` : **{message.guild.name}**\n`Channel` : **{channel.name}**\n`Messages Read` : **{limit}**""",
+            # colour=0x1a7794)
 
             # await message.author.send(embed=answer)
             # await message.author.send(file=discord.File(file_location, filename='data.csv')) # Sending the file
             # os.remove(file_location) # Deleting the file
-        
-  
+
+
 file = open('token.txt', 'r')
 client.run(file.read())
