@@ -215,5 +215,5 @@ async def on_message(message):
             # os.remove(file_location) # Deleting the file
         
   
-
-client.run('ODEyNjE4MDA1OTM3OTEzODc2.YDDXfg.54Vz5yyAnnu_AntTkz-_B_S1rjs')
+file = open('token.txt', 'r')
+client.run(file.read())
